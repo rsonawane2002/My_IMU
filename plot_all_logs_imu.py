@@ -295,9 +295,12 @@ def main():
     parser.add_argument('--seed', type=int, default=12345, help='RNG seed for synthetic noise')
     args = parser.parse_args()
 
+    os.makedirs(args.out, exist_ok=True)
+    print(f'Plots will be written to: {os.path.abspath(args.out)}')
+
     traj_dirs = sorted(d for d in glob.glob(os.path.join(args.logs_root, 'traj_*')) if os.path.isdir(d))
     if not traj_dirs:
-        print(f'No traj_* directories found under {args.logs_root}')
+        print(f'No traj_* directories found under {args.logs_root}; no plots generated.')
         return
 
     for traj in traj_dirs:
