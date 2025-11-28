@@ -255,6 +255,13 @@ def apply_fixed_axis_map(df: pd.DataFrame) -> pd.DataFrame:
         GX_new =  GZ_old
         GY_new =  GY_old  # don't touch Y axis
         GZ_new = -GX_old
+
+    Additional requested tweak for gyro alignment (apply after above):
+        swap(GX, GZ)
+    Final gyro mapping after swap:
+        GX_new = -GX_old
+        GY_new =  GY_old
+        GZ_new =  GZ_old
     """
     out = df.copy()
     ax = df['imu_ax'].to_numpy()
@@ -267,9 +274,16 @@ def apply_fixed_axis_map(df: pd.DataFrame) -> pd.DataFrame:
     out['imu_ax'] = -az
     out['imu_ay'] = -ay
     out['imu_az'] = ax
-    out['imu_gx'] = gz
-    out['imu_gy'] = gy
-    out['imu_gz'] = -gx
+
+    # First apply the fixed mapping requested earlier
+    mapped_gx = gz
+    mapped_gy = gy
+    mapped_gz = -gx
+
+    # Then swap GX and GZ to match real IMU channel alignment
+    out['imu_gx'] = mapped_gz
+    out['imu_gy'] = mapped_gy
+    out['imu_gz'] = mapped_gx
     return out
 
 
