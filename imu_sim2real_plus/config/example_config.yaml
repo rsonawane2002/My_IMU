@@ -1,0 +1,53 @@
+imu:
+  accel_fs_g: 8            # OK (±8 g) — 0.244 mg/LSB sensitivity
+  gyro_fs_dps: 2000        # OK (±2000 dps) — 70 mdps/LSB sensitivity
+  misalignment_pct: [-1.0, 1.0]   # OK (cross-axis ±1%)
+  quantization_bits: 16     # OK (matches digital output resolution)
+  accel:
+    # Noise density: 60–200 µg/√Hz  =>  (60e-6..200e-6)*9.80665 m/s²/√Hz
+    noise_density: [0.0005884, 0.0019613]      # m/s^2/√Hz  (datasheet)
+    # Choose ONE of the following, depending on scenario:
+    # scale_ppm: [-20000, 20000]               # ±2% @25°C (pre-cal)  ← datasheet
+    scale_ppm: [-3000, 3000]                   # keep if modeling post-calibrated units
+    # Bias (offset at start):
+    # For pre-cal use ±20 mg @25°C; long-term can be ±150 mg.
+    bias_init: [-0.1961, 0.1961]               # m/s^2  (= ±20 mg)
+    bias_tau_s: [200, 2000]                     # OK (not specified; modeling choice)
+  gyro:
+    # Noise density: 5–12 mdps/√Hz => (5e-3..12e-3)*pi/180 rad/s/√Hz
+    noise_density: [8.7266e-05, 2.0944e-04]    # rad/s/√Hz (datasheet)
+    # As above, pick based on calibration stage:
+    # scale_ppm: [-20000, 20000]               # ±2% @25°C (pre-cal)  ← datasheet
+    scale_ppm: [-1000, 1000]                    # keep if modeling post-calibrated units
+    # Bias (zero-rate level at start):
+    bias_init: [-0.0349066, 0.0349066]          # rad/s (= ±2 °/s @25°C)
+    bias_tau_s: [200, 2000]                      # OK (modeling choice)
+timestamp:
+  odr_hz: 104            # use native 104 Hz enum (or keep 100 Hz if desired)
+  clock_drift_ppm: [-30, 30]
+  jitter_us_rms: 150
+  packet_burst: 10
+  drop_prob: 0.01
+mount:
+  lever_arm_m: [0.0, 0.0, 0.05]
+  misrot_deg: [-20, 20]
+dataset:
+  out_dir: runs/sim
+  num_sequences: 10
+  seconds_per_seq: 20
+  random_seed: 42
+kpi:
+  orient_med_deg: 1.5
+  orient_p95_deg: 3.0
+vibration:
+  g_sensitivity: 0.002   # (not specified in DS; keep as modeling parameter)
+  accel_modes:
+    - {f0: 55, zeta: 0.03, gain: 3.0, axes: [0, 2]}
+    - {f0: 120, zeta: 0.02, gain: 2.0, axes: [0, 1, 2]}
+  gyro_modes:
+    - {f0: 55, zeta: 0.035, gain: 0.8, axes: [0, 2]}
+    - {f0: 180, zeta: 0.02, gain: 1.4, axes: [0, 1]}
+  motor_harmonics: {1: 1.0, 2: 0.35, 3: 0.2}
+  floor_noise_sigma: 0.4
+  floor_noise_ar: 0.96
+  floor_noise_ma: 0.2

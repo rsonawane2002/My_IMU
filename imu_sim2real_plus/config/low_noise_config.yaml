@@ -1,0 +1,32 @@
+imu:
+  accel_fs_g: 8
+  gyro_fs_dps: 2000
+  misalignment_pct: [-1.0, 1.0]
+  quantization_bits: 16
+  accel:
+    noise_density: [0.0000588, 0.0001177]
+    scale_ppm: [-3000, 3000]
+    bias_init: [-0.0147, 0.0147]
+    bias_tau_s: [2000, 20000]
+  gyro:
+    noise_density: [6e-6, 8e-6]
+    scale_ppm: [-1000, 1000]
+    bias_init: [-1.94e-6, 1.94e-6]
+    bias_tau_s: [2000, 20000]
+timestamp:
+  odr_hz: 100
+  clock_drift_ppm: [-30, 30]
+  jitter_us_rms: 150
+  packet_burst: 10
+  drop_prob: 0.01
+mount:
+  lever_arm_m: [0.0, 0.0, 0.05]
+  misrot_deg: [-20, 20]
+dataset:
+  out_dir: runs/sim
+  num_sequences: 10
+  seconds_per_seq: 20
+  random_seed: 42
+kpi:
+  orient_med_deg: 1.5
+  orient_p95_deg: 3.0
