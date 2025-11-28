@@ -251,9 +251,9 @@ def apply_fixed_axis_map(df: pd.DataFrame) -> pd.DataFrame:
         AX_new = -AZ_old
         AY_new = -AY_old
         AZ_new =  AX_old
-      Gyroscope:
-        GX_new = -GZ_old
-        GY_new = -GY_old
+      Gyroscope (as requested):
+        GX_new =  GZ_old
+        GY_new =  GY_old  # don't touch Y axis
         GZ_new = -GX_old
     """
     out = df.copy()
@@ -267,8 +267,8 @@ def apply_fixed_axis_map(df: pd.DataFrame) -> pd.DataFrame:
     out['imu_ax'] = -az
     out['imu_ay'] = -ay
     out['imu_az'] = ax
-    out['imu_gx'] = -gz
-    out['imu_gy'] = -gy
+    out['imu_gx'] = gz
+    out['imu_gy'] = gy
     out['imu_gz'] = -gx
     return out
 
