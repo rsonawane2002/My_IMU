@@ -1,0 +1,53 @@
+New Tuned Config
+
+- File: imu_sim2real_plus/config/datasheet_typ.yaml
+- Purpose: Mirrors ASM330LHH “typical” stationary specs and test
+conditions.
+- Contents (full):
+imu:
+  # Full-scale ranges aligned with datasheet-typ test conditions
+  accel_fs_g: 2              # ±2 g
+  gyro_fs_dps: 250           # ±250 dps
+
+  misalignment_pct: [-1.0, 1.0]
+  quantization_bits: 16
+
+  accel:
+    # Acceleration noise density (typ): 60 µg/√Hz → 5.884e-4 m/s^2/√Hz
+    noise_density: [0.0005884, 0.0005884]
+    # Post-calibrated scale tightness (keep modest unless modeling
+pre-cal):
+    scale_ppm: [-3000, 3000]
+    # Tight initial bias for stationary characterization (±1 mg)
+    bias_init: [-0.00981, 0.00981]     # m/s^2
+    bias_tau_s: [200, 2000]
+
+  gyro:
+    # Gyro rate noise density typ: 5 mdps/√Hz → 8.7266e-05 rad/s/√Hz
+    noise_density: [8.7266e-05, 8.7266e-05]
+    scale_ppm: [-1000, 1000]
+    # Tight initial bias for stationary characterization (~±0.057 deg/
+s)
+    bias_init: [-0.001, 0.001]         # rad/s
+    bias_tau_s: [200, 2000]
+
+timestamp:
+  odr_hz: 104
+  clock_drift_ppm: [-30, 30]
+  jitter_us_rms: 150
+  packet_burst: 10
+  drop_prob: 0.0
+
+mount:
+  lever_arm_m: [0.0, 0.0, 0.0]
+  misrot_deg: [-5, 5]
+
+dataset:
+  out_dir: runs/sim_typ
+  num_sequences: 3
+  seconds_per_seq: 30
+  random_seed: 42
+
+kpi:
+  orient_med_deg: 1.5
+  orient_p95_deg: 3.0

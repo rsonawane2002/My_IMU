@@ -70,8 +70,9 @@ def plot_pair(sim_df: pd.DataFrame, real_df: pd.DataFrame, title: str, out_path:
     # Accelerometer (m/s^2)
     for i, (col_sim, col_real, label) in enumerate(zip(SIM_COLS[1:4], REAL_COLS[1:4], ['ax', 'ay', 'az'])):
         if col_sim in sim_df and col_real in real_df:
-            axes[i].plot(sim_df['t_norm'], sim_df[col_sim], label='Sim ' + label)
-            axes[i].plot(real_df['t_norm'], real_df[col_real], label='Real ' + label)
+            # Draw real first (behind), then sim (blue) on top
+            axes[i].plot(real_df['t_norm'], real_df[col_real], label='Real ' + label, zorder=1)
+            axes[i].plot(sim_df['t_norm'], sim_df[col_sim], label='Sim ' + label, zorder=2)
         axes[i].set_title(f'IMU {label.upper()}')
         axes[i].set_xlabel('Time [s]')
         axes[i].set_ylabel('Acceleration [m/s^2]')
@@ -82,8 +83,9 @@ def plot_pair(sim_df: pd.DataFrame, real_df: pd.DataFrame, title: str, out_path:
     for i, (col_sim, col_real, label) in enumerate(zip(SIM_COLS[4:], REAL_COLS[4:], ['gx', 'gy', 'gz'])):
         ax = axes[i + 3]
         if col_sim in sim_df and col_real in real_df:
-            ax.plot(sim_df['t_norm'], sim_df[col_sim], label='Sim ' + label)
-            ax.plot(real_df['t_norm'], real_df[col_real], label='Real ' + label)
+            # Draw real first (behind), then sim (blue) on top
+            ax.plot(real_df['t_norm'], real_df[col_real], label='Real ' + label, zorder=1)
+            ax.plot(sim_df['t_norm'], sim_df[col_sim], label='Sim ' + label, zorder=2)
         ax.set_title(f'IMU {label.upper()}')
         ax.set_xlabel('Time [s]')
         ax.set_ylabel('Angular Velocity [rad/s]')
@@ -243,6 +245,73 @@ def apply_axis_alignment(df: pd.DataFrame, A: np.ndarray) -> pd.DataFrame:
     return out
 
 
+def compute_axis_alignment_separate(sim_df: pd.DataFrame, real_df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    """Return two signed-permutation matrices `(A_acc, A_gyr)` that independently
+    align simulated accelerometer and gyroscope axes to the real IMU axes by
+    maximizing absolute correlation for each sensor type.
+
+    - For each sensor type we evaluate all 3! permutations and pick the one with
+      the highest sum of absolute correlations; the sign per axis is chosen to
+      make the correlation positive.
+    """
+    from itertools import permutations
+
+    t_sim = sim_df['t_norm'].to_numpy()
+    t_real = real_df['t_norm'].to_numpy()
+
+    X_acc = sim_df[['imu_ax','imu_ay','imu_az']].to_numpy()
+    X_gyr = sim_df[['imu_gx','imu_gy','imu_gz']].to_numpy()
+    Y_acc = real_df[['acc_x_g','acc_y_g','acc_z_g']].to_numpy()
+    Y_gyr = real_df[['gyro_x_rad_s','gyro_y_rad_s','gyro_z_rad_s']].to_numpy()
+
+    X_acc_i = _interp_to(t_sim, X_acc, t_real)
+    X_gyr_i = _interp_to(t_sim, X_gyr, t_real)
+
+    def corr_mat(X, Y):
+        C = np.zeros((3,3))
+        for i in range(3):
+            for j in range(3):
+                C[i,j] = _safe_corr(X[:,j], Y[:,i])
+        return C
+
+    def best_A(C):
+        best_score = -np.inf
+        best_perm = None
+        best_signs = None
+        for p in permutations(range(3)):
+            signs = []
+            score = 0.0
+            for i in range(3):
+                c = C[i, p[i]]
+                s = 1.0 if c >= 0 else -1.0
+                signs.append(s)
+                score += abs(c)
+            if score > best_score:
+                best_score = score
+                best_perm = p
+                best_signs = signs
+        A = np.zeros((3,3))
+        for i in range(3):
+            j = best_perm[i]
+            A[j, i] = best_signs[i]
+        return A
+
+    C_acc = corr_mat(X_acc_i, Y_acc)
+    C_gyr = corr_mat(X_gyr_i, Y_gyr)
+    return best_A(C_acc), best_A(C_gyr)
+
+
+def apply_axis_alignment_separate(df: pd.DataFrame, A_acc: np.ndarray, A_gyr: np.ndarray) -> pd.DataFrame:
+    acc = df[['imu_ax','imu_ay','imu_az']].to_numpy()
+    gyr = df[['imu_gx','imu_gy','imu_gz']].to_numpy()
+    acc_al = acc @ A_acc
+    gyr_al = gyr @ A_gyr
+    out = df.copy()
+    out['imu_ax'], out['imu_ay'], out['imu_az'] = acc_al[:,0], acc_al[:,1], acc_al[:,2]
+    out['imu_gx'], out['imu_gy'], out['imu_gz'] = gyr_al[:,0], gyr_al[:,1], gyr_al[:,2]
+    return out
+
+
 def apply_fixed_axis_map(df: pd.DataFrame) -> pd.DataFrame:
     """Apply user-specified fixed axis transform to simulated data.
 
@@ -260,7 +329,7 @@ def apply_fixed_axis_map(df: pd.DataFrame) -> pd.DataFrame:
         swap(GX, GZ)
     Final gyro mapping after swap:
         GX_new = -GX_old
-        GY_new =  GY_old
+        GY_new = -GY_old
         GZ_new =  GZ_old
     """
     out = df.copy()
@@ -282,7 +351,7 @@ def apply_fixed_axis_map(df: pd.DataFrame) -> pd.DataFrame:
 
     # Then swap GX and GZ to match real IMU channel alignment
     out['imu_gx'] = mapped_gz
-    out['imu_gy'] = mapped_gy
+    out['imu_gy'] = -mapped_gy
     out['imu_gz'] = mapped_gx
     return out
 
@@ -293,6 +362,8 @@ def main():
     parser.add_argument('--out', default='runs/log_plots', help='Output directory for plots')
     parser.add_argument('--config', default='imu_sim2real_plus/config/example_config.yaml', help='IMU noise config for sim2real synthetic variant')
     parser.add_argument('--seed', type=int, default=12345, help='RNG seed for synthetic noise')
+    parser.add_argument('--crop_start_s', type=float, default=0.0, help='Drop data earlier than this t (seconds) based on normalized time')
+    parser.add_argument('--align', choices=['fixed','auto','auto_separate'], default='fixed', help='Axis alignment strategy for simulated data when comparing to real')
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -311,13 +382,27 @@ def main():
         sim_path, real_path = pair
         base = os.path.basename(traj)
 
-        # 1) Plot original sim imu_*.csv vs real
+        # 1) Plot original sim imu_*.csv (Isaac Sim) vs real
         try:
             sim_df, real_df = load_and_prepare(sim_path, real_path)
-            # Apply fixed axis mapping to the simulated data
-            sim_df_al = apply_fixed_axis_map(sim_df)
+            # Optional crop at start
+            if args.crop_start_s > 0:
+                sim_df = sim_df[sim_df['t_norm'] >= args.crop_start_s].reset_index(drop=True)
+                real_df = real_df[real_df['t_norm'] >= args.crop_start_s].reset_index(drop=True)
+            # Apply alignment
+            if args.align == 'fixed':
+                sim_df_al = apply_fixed_axis_map(sim_df)
+                al_tag = 'fixed-axis'
+            elif args.align == 'auto':
+                A = compute_axis_alignment(sim_df, real_df)
+                sim_df_al = apply_axis_alignment(sim_df, A)
+                al_tag = 'auto-aligned'
+            else:
+                A_acc, A_gyr = compute_axis_alignment_separate(sim_df, real_df)
+                sim_df_al = apply_axis_alignment_separate(sim_df, A_acc, A_gyr)
+                al_tag = 'auto-aligned, per-sensor'
             out_path = os.path.join(args.out, f'{base}.png')
-            title = f'{base}: {os.path.basename(sim_path)} vs {os.path.basename(real_path)} (fixed-axis)'
+            title = f'{base}: {os.path.basename(sim_path)} vs {os.path.basename(real_path)} ({al_tag})'
             plot_pair(sim_df_al, real_df, title, out_path)
             print(f'Wrote {out_path}')
         except Exception as e:
@@ -328,12 +413,26 @@ def main():
         if clean_path:
             try:
                 synth_df = synth_from_clean(clean_path, args.config, seed=args.seed)
-                synth_df_al = apply_fixed_axis_map(synth_df)
+                if args.crop_start_s > 0:
+                    synth_df = synth_df[synth_df['t_norm'] >= args.crop_start_s].reset_index(drop=True)
+                if args.align == 'fixed':
+                    synth_df_al = apply_fixed_axis_map(synth_df)
+                    al_tag2 = 'fixed-axis'
+                elif args.align == 'auto':
+                    A2 = compute_axis_alignment(synth_df, real_df)
+                    synth_df_al = apply_axis_alignment(synth_df, A2)
+                    al_tag2 = 'auto-aligned'
+                else:
+                    A2_acc, A2_gyr = compute_axis_alignment_separate(synth_df, real_df)
+                    synth_df_al = apply_axis_alignment_separate(synth_df, A2_acc, A2_gyr)
+                    al_tag2 = 'auto-aligned, per-sensor'
                 # real_df already loaded above; ensure exists
                 if 'real_df' not in locals():
                     _, real_df = load_and_prepare(sim_path, real_path)
+                    if args.crop_start_s > 0:
+                        real_df = real_df[real_df['t_norm'] >= args.crop_start_s].reset_index(drop=True)
                 out_path2 = os.path.join(args.out, f'{base}_sim2real.png')
-                title2 = f'{base}: sim2real({os.path.basename(clean_path)}) vs {os.path.basename(real_path)} (fixed-axis)'
+                title2 = f'{base}: sim2real({os.path.basename(clean_path)}) vs {os.path.basename(real_path)} ({al_tag2})'
                 plot_pair(synth_df_al, real_df, title2, out_path2)
                 print(f'Wrote {out_path2}')
             except Exception as e:

@@ -59,11 +59,12 @@ def simulate_imu_with_vibration(
 
     axis_scale = np.array([1.0,0.6,0.9])
 
+    
     vib_accel = np.zeros_like(true_a_B)
     vib_gyro  = np.zeros_like(true_w_B)
     for ax in range(3):
         vib_accel[:,ax] = axis_scale[ax] * apply_filter_bank(base_exc, fs, [m for m in modes_accel if ax in m.axes])
-        vib_gyro[:,ax]  = axis_scale[ax] * apply_filter_bank(base_exc, fs, [m for m in modes_gyro  if ax in m.axes])
+        #vib_gyro[:,ax]  = axis_scale[ax] * apply_filter_bank(base_exc, fs, [m for m in modes_gyro  if ax in m.axes])
 
     gyro_coupling = g_sensitivity * vib_accel
 

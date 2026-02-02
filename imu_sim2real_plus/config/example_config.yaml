@@ -1,3 +1,5 @@
+#EXPOSE: accel_fs_g, gyro_fs_dps, odr_hz, vibration
+
 imu:
   accel_fs_g: 8            # OK (±8 g) — 0.244 mg/LSB sensitivity
   gyro_fs_dps: 2000        # OK (±2000 dps) — 70 mdps/LSB sensitivity
@@ -51,3 +53,15 @@ vibration:
   floor_noise_sigma: 0.4
   floor_noise_ar: 0.96
   floor_noise_ma: 0.2
+
+# Optional IMU error spec in datasheet-like units.
+# If present, the pipeline adapts these into the noise/bias fields above.
+imu_error:
+  gyro_b: [0.0, 0.0, 0.0]            # deg/hr
+  gyro_arw: [0.25, 0.25, 0.25]        # deg/√hr
+  gyro_b_stability: [3.5, 3.5, 3.5]   # deg/hr
+  gyro_b_corr: [100.0, 100.0, 100.0]  # s (use inf for random-walk)
+  accel_b: [0.0, 0.0, 0.0]            # m/s^2
+  accel_vrw: [0.03119, 0.03009, 0.04779]  # m/s/√hr
+  accel_b_stability: [4.29e-5, 5.72e-5, 8.02e-5]  # m/s^2
+  accel_b_corr: [200.0, 200.0, 200.0]           # s
