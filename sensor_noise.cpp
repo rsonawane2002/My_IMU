@@ -74,6 +74,7 @@ private:
     double arma_prev_y;
     double arma_prev_e;
     std::vector<double> gyro_bias;
+    std::vector<double> accel_bias;  // ADDED: Accelerometer bias state
 
     // Filters
     std::map<int, StatefulFilter> filters_acc;
@@ -84,7 +85,7 @@ private:
     // 1. High-Level Knobs (UPDATED)
     double accel_fs_g = 2.0;       // [UPDATED] Was 8.0, now 2.0 per YAML
     double gyro_fs_dps = 250.0;    // [UPDATED] Was 2000.0, now 250.0 per YAML
-    double odr_hz = 104.0;         // Confirmed 104Hz
+    double odr_hz = 60.0;         // Confirmed 104Hz
     bool use_vibration = false;    
 
     // 2. Vibration Model Internals
@@ -100,7 +101,12 @@ private:
     // Calculated as: Density * sqrt(ODR)
     double accel_white_std = 0.0060;   // [UPDATED] Was 0.2
     double gyro_white_std = 0.00089;   // [UPDATED] Was 0.0025
-    double gyro_bias_rw_std = 2e-5;    // Kept low for stability
+    
+    // ADDED: Gauss-Markov bias model parameters
+    double tau_a = 40000.0;  // Accelerometer bias time constant (seconds)
+    double tau_g = 40000.0;  // Gyroscope bias time constant (seconds)
+    double accel_bias_sigma = 0.0060;  // Accelerometer bias diffusion (matches noise density)
+    double gyro_bias_sigma = 0.00089;  // Gyroscope bias diffusion (matches noise density)
     
     // [UPDATED] Was {1.0, 0.6, 0.9}. Reset to 1.0 because 'scale_ppm' is tight (~0.3%)
     std::vector<double> axis_scale = {1.0, 1.0, 1.0}; 
@@ -117,6 +123,7 @@ public:
     Sim2RealCore(int seed) : filters_initialized(false), last_time(-1.0), motor_phase(0.0), arma_prev_y(0.0), arma_prev_e(0.0) {
         rng.seed(seed);
         gyro_bias = {0.0, 0.0, 0.0};
+        accel_bias = {0.0, 0.0, 0.0};  // ADDED: Initialize accel bias
 
         // --- PRESERVED "QUIET" VIBRATION DEFAULTS ---
         // These match the working "Low Noise" setup we verified earlier
@@ -132,7 +139,7 @@ public:
             {75.0, 0.03, 0.004, {2}},    
             {120.0, 0.03, 0.004, {2}}
         };
-        motor_harmonics = {{1, 1.0}, {2, 0.35}, {3, 0.2}};
+        motor_harmonics = {{1, 0.03}, {2, 0.02}, {3, 0.025}};
     }
 
     // --- ROBUST SETTER ---
@@ -147,6 +154,12 @@ public:
         // 2. Vibration Internals
         if (config.contains("g_sensitivity")) g_sensitivity = config["g_sensitivity"].cast<double>();
         if (config.contains("floor_noise_sigma")) floor_noise_sigma = config["floor_noise_sigma"].cast<double>();
+        
+        // ADDED: Gauss-Markov bias parameters
+        if (config.contains("tau_a")) tau_a = config["tau_a"].cast<double>();
+        if (config.contains("tau_g")) tau_g = config["tau_g"].cast<double>();
+        if (config.contains("accel_bias_sigma")) accel_bias_sigma = config["accel_bias_sigma"].cast<double>();
+        if (config.contains("gyro_bias_sigma")) gyro_bias_sigma = config["gyro_bias_sigma"].cast<double>();
         
         filters_initialized = false; 
     }
@@ -189,7 +202,7 @@ public:
         std::vector<double> vib_gyro = {0, 0, 0};
         
         if (use_vibration) {
-            double rpm = 4500.0;
+            double rpm = 4800.0;
             motor_phase += 2 * M_PI * (rpm / 60.0) * dt_calc;
             
             double exc = 0.0;
@@ -218,11 +231,17 @@ public:
         std::normal_distribution<double> dist_norm(0.0, 1.0);
         std::vector<double> n_acc(3), n_gyr(3);
         
+        // UPDATED: Gauss-Markov bias model instead of pure random walk
         for(int i=0; i<3; ++i) {
-            // Apply Calculated White Noise
+            // White noise
             n_acc[i] = dist_norm(rng) * accel_white_std;
             n_gyr[i] = dist_norm(rng) * gyro_white_std;
-            gyro_bias[i] += dist_norm(rng) * (gyro_bias_rw_std * std::sqrt(dt_calc));
+            
+            // GM1 bias evolution: x = x + (-(dt/tau))*x + sigma*sqrt(dt)*randn()
+            accel_bias[i] = accel_bias[i] + (-(dt_calc/tau_a)) * accel_bias[i] + 
+                           accel_bias_sigma * std::sqrt(dt_calc) * dist_norm(rng);
+            gyro_bias[i] = gyro_bias[i] + (-(dt_calc/tau_g)) * gyro_bias[i] + 
+                          gyro_bias_sigma * std::sqrt(dt_calc) * dist_norm(rng);
         }
 
         // Summation, Clipping, Quantization
@@ -234,9 +253,10 @@ public:
 
         std::vector<double> final_acc(3), final_ang(3);
         for(int i=0; i<3; ++i) {
-            double raw_a = true_acc(i) + vib_accel[i] + n_acc[i];
+            // UPDATED: Now includes accel_bias
+            double raw_a = true_acc(i) + vib_accel[i] + accel_bias[i] + n_acc[i];
             double coupling = g_sensitivity * vib_accel[i];
-            double raw_g = true_ang(i) + vib_gyro[i] + coupling + n_gyr[i] + gyro_bias[i];
+            double raw_g = true_ang(i) + vib_gyro[i] + coupling + gyro_bias[i] + n_gyr[i];
 
             double clipped_a = std::max(-acc_lim, std::min(raw_a, acc_lim));
             double clipped_g = std::max(-gyr_lim, std::min(raw_g, gyr_lim));
@@ -255,7 +275,7 @@ public:
     }
 };
 
-PYBIND11_MODULE(sim2real_native, m) {
+PYBIND11_MODULE(sim2real_native_v0_1, m) {
     py::class_<Sim2RealCore>(m, "Sim2RealCore")
         .def(py::init<int>())
         .def("process", &Sim2RealCore::process)
